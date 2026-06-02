@@ -6,28 +6,30 @@ use App\Http\Controllers\Controller;
 use App\Models\Checkout;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
+use \Illuminate\Support\Facades\Log;
 
 class CheckoutController extends Controller
 {
     public function open_checkout(Request $request)
     {
-        $caixaAberto = Checkout::where('status', 'aberto')->first();
-        if ($caixaAberto) {
-            return response()->json(['error' => 'Já existe um caixa aberto!'], 400);
-        }
-
         try {
-            $request->validate(['valor_abertura' => 'required|numeric']);
+            // Validação básica
+            $request->validate([
+                'valor_abertura' => 'required|numeric'
+            ]);
 
-            $caixa = Checkout::create([
+            // Tenta criar
+            $checkout = Checkout::create([
+                'user_id' => $request->user()->id, // <--- Isso garante segurança total
                 'valor_abertura' => $request->valor_abertura,
                 'status' => 'aberto',
                 'data_abertura' => now()
             ]);
 
-            return response()->json(['message' => 'Sucesso', 'caixa' => $caixa]);
+            return response()->json(['message' => 'Caixa aberto!', 'data' => $checkout], 201);
         } catch (\Exception $e) {
-            // Isso vai retornar o erro real no Postman em vez de um 500 genérico
+            // ISSO VAI ESCREVER O ERRO REAL NO LOG QUANDO DER 500
+            Log::error('Erro ao abrir caixa: ' . $e->getMessage());
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
