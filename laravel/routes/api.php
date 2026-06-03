@@ -33,6 +33,11 @@ Route::get('/teste', function () {
 // Rotas do Fluxo de Caixa (PDV)
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/checkout/open', [CheckoutController::class, 'open_checkout']);
-    Route::post('/checkout/launch', [CheckoutController::class, 'launch']);
+    Route::post('/checkout/launch', [CheckoutController::class, 'launchTransaction']);
     Route::post('/checkout/close', [CheckoutController::class, 'closeCheckout']);
+    Route::get('/checkout/history', [CheckoutController::class, 'getHistory']);
+    Route::post('/checkout/finalizar-venda', [CheckoutController::class, 'finalizeSale']);
+    Route::get('/admin/caixas-abertos', [CheckoutController::class, 'getActiveCheckouts']);
+    Route::post('/admin/caixas/{id}/fechar', [CheckoutController::class, 'forceCloseCheckout']);
+    Route::get('/admin/historico-fechamentos', [CheckoutController::class, 'getClosingHistory']);
 });

@@ -23,6 +23,16 @@ services:
     networks:
       - venda_boa_network
 
+  venda_boa_db:
+    image: mysql:8.0
+    container_name: venda_boa_db
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: venda_boa
+      MYSQL_ROOT_PASSWORD: Nova_s3nh4_forte
+    networks:
+      - venda_boa_network
+
 networks:
   venda_boa_network:
     driver: bridge
