@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\CheckoutController;
+use App\Http\Controllers\Api\ProductController;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -29,7 +30,6 @@ Route::get('/teste', function () {
 });
 
 
-
 // Rotas do Fluxo de Caixa (PDV)
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/checkout/open', [CheckoutController::class, 'open_checkout']);
@@ -40,4 +40,22 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/admin/caixas-abertos', [CheckoutController::class, 'getActiveCheckouts']);
     Route::post('/admin/caixas/{id}/fechar', [CheckoutController::class, 'forceCloseCheckout']);
     Route::get('/admin/historico-fechamentos', [CheckoutController::class, 'getClosingHistory']);
+    // ── Catálogo (PDV — leitura) ──────────────────────────────────────────────
+    Route::get('/catalogo', [ProductController::class, 'catalogo']);
+
+    // ── Categorias (admin) ────────────────────────────────────────────────────
+    Route::get('/categorias',        [ProductController::class, 'listarCategorias']);
+    Route::post('/categorias',        [ProductController::class, 'criarCategoria']);
+    Route::put('/categorias/{id}',   [ProductController::class, 'atualizarCategoria']);
+    Route::delete('/categorias/{id}',   [ProductController::class, 'deletarCategoria']);
+
+    // ── Produtos (admin) ──────────────────────────────────────────────────────
+    Route::get('/produtos',          [ProductController::class, 'listarProdutos']);
+    Route::post('/produtos',          [ProductController::class, 'criarProduto']);
+    Route::put('/produtos/{id}',     [ProductController::class, 'atualizarProduto']);
+    Route::delete('/produtos/{id}',     [ProductController::class, 'deletarProduto']);
+
+    // ── Variantes (admin) ─────────────────────────────────────────────────────
+    Route::post('/produtos/{id}/variantes',  [ProductController::class, 'criarVariante']);
+    Route::delete('/variantes/{id}',           [ProductController::class, 'deletarVariante']);
 });
