@@ -1,61 +1,59 @@
 <?php
+// routes/api.php
 
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CheckoutController;
 use App\Http\Controllers\Api\ProductController;
-use App\Models\User;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\StockController;
 
-Route::get('/user', function (Request $request) {
-    return $request->user();
-})->middleware('auth:sanctum');
+Route::post('/login', [AuthController::class, 'login']);
 
-Route::post('/login', function (Request $request) {
-    $request->validate(['email' => 'required|email', 'password' => 'required']);
+Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
 
-    $user = User::where('email', $request->email)->first();
+    Route::get('/user', fn(\Illuminate\Http\Request $r) => $r->user()->load('tenant'));
 
-    if (! $user || ! Hash::check($request->password, $user->password)) {
-        return response()->json(['message' => 'Credenciais inválidas'], 401);
-    }
-
-    return response()->json([
-        'token' => $user->createToken('venda_boa_token')->plainTextToken
-    ]);
-});
-
-Route::get('/teste', function () {
-    return response()->json(['status' => 'ok']);
-});
-
-
-// Rotas do Fluxo de Caixa (PDV)
-Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/checkout/open', [CheckoutController::class, 'open_checkout']);
-    Route::post('/checkout/launch', [CheckoutController::class, 'launchTransaction']);
-    Route::post('/checkout/close', [CheckoutController::class, 'closeCheckout']);
-    Route::get('/checkout/history', [CheckoutController::class, 'getHistory']);
+    // Checkout — todos os usuários autenticados
+    Route::post('/checkout/open',            [CheckoutController::class, 'open_checkout']);
+    Route::post('/checkout/close',           [CheckoutController::class, 'closeCheckout']);
+    Route::post('/checkout/launch',          [CheckoutController::class, 'launchTransaction']);
     Route::post('/checkout/finalizar-venda', [CheckoutController::class, 'finalizeSale']);
-    Route::get('/admin/caixas-abertos', [CheckoutController::class, 'getActiveCheckouts']);
-    Route::post('/admin/caixas/{id}/fechar', [CheckoutController::class, 'forceCloseCheckout']);
-    Route::get('/admin/historico-fechamentos', [CheckoutController::class, 'getClosingHistory']);
-    // ── Catálogo (PDV — leitura) ──────────────────────────────────────────────
+    Route::get('/checkout/history',         [CheckoutController::class, 'getHistory']);
+
+    // Catálogo PDV — todos
     Route::get('/catalogo', [ProductController::class, 'catalogo']);
 
-    // ── Categorias (admin) ────────────────────────────────────────────────────
-    Route::get('/categorias',        [ProductController::class, 'listarCategorias']);
-    Route::post('/categorias',        [ProductController::class, 'criarCategoria']);
-    Route::put('/categorias/{id}',   [ProductController::class, 'atualizarCategoria']);
-    Route::delete('/categorias/{id}',   [ProductController::class, 'deletarCategoria']);
+    // Admin: caixas e gráfico
+    Route::middleware('role:admin')->group(function () {
+        Route::get('/admin/caixas-abertos',        [CheckoutController::class, 'getActiveCheckouts']);
+        Route::post('/admin/caixas/{id}/fechar',    [CheckoutController::class, 'forceCloseCheckout']);
+        Route::get('/admin/historico-fechamentos', [CheckoutController::class, 'getClosingHistory']);
 
-    // ── Produtos (admin) ──────────────────────────────────────────────────────
-    Route::get('/produtos',          [ProductController::class, 'listarProdutos']);
-    Route::post('/produtos',          [ProductController::class, 'criarProduto']);
-    Route::put('/produtos/{id}',     [ProductController::class, 'atualizarProduto']);
-    Route::delete('/produtos/{id}',     [ProductController::class, 'deletarProduto']);
+        Route::get('/categorias',              [ProductController::class, 'listarCategorias']);
+        Route::post('/categorias',              [ProductController::class, 'criarCategoria']);
+        Route::put('/categorias/{id}',         [ProductController::class, 'atualizarCategoria']);
+        Route::delete('/categorias/{id}',         [ProductController::class, 'deletarCategoria']);
 
-    // ── Variantes (admin) ─────────────────────────────────────────────────────
-    Route::post('/produtos/{id}/variantes',  [ProductController::class, 'criarVariante']);
-    Route::delete('/variantes/{id}',           [ProductController::class, 'deletarVariante']);
+        Route::get('/produtos',                [ProductController::class, 'listarProdutos']);
+        Route::post('/produtos',                [ProductController::class, 'criarProduto']);
+        Route::put('/produtos/{id}',           [ProductController::class, 'atualizarProduto']);
+        Route::delete('/produtos/{id}',           [ProductController::class, 'deletarProduto']);
+
+        Route::post('/produtos/{id}/variantes', [ProductController::class, 'criarVariante']);
+        Route::delete('/variantes/{id}',          [ProductController::class, 'deletarVariante']);
+    });
+
+
+    // ── Estoque ───────────────────────────────────────────────────────────────────
+
+    // Alertas — disponível para todos (operador vê alertas do PDV)
+    Route::get('/estoque/alertas', [StockController::class, 'alertas']);
+
+    // Visão geral e ajustes — somente admin
+    Route::middleware('role:admin')->group(function () {
+        Route::get('/estoque',                         [StockController::class, 'visaoGeral']);
+        Route::post('/estoque/variantes/{id}/ajustar',  [StockController::class, 'ajustar']);
+        Route::put('/estoque/variantes/{id}/minimo',   [StockController::class, 'atualizarMinimo']);
+        Route::get('/estoque/variantes/{id}/historico', [StockController::class, 'historico']);
+    });
 });
