@@ -1,33 +1,60 @@
 <?php
+// app/Models/User.php
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
-use Database\Factories\UserFactory;
-use Illuminate\Database\Eloquent\Attributes\Fillable;
-use Illuminate\Database\Eloquent\Attributes\Hidden;
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'password'])]
-#[Hidden(['password', 'remember_token'])]
 class User extends Authenticatable
 {
-    /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, HasApiTokens;
+    use HasApiTokens, Notifiable;
+
+    protected $fillable = ['tenant_id', 'name', 'email', 'password', 'role'];
+
+    protected $hidden = ['password', 'remember_token'];
+
+    protected $casts = [
+        'email_verified_at' => 'datetime',
+        'password'          => 'hashed',
+    ];
+
+    // ── Relacionamentos ───────────────────────────────────────────────────────
+
+    public function tenant()
+    {
+        return $this->belongsTo(Tenant::class);
+    }
+
+    public function checkouts()
+    {
+        return $this->hasMany(Checkout::class);
+    }
+
+    // ── Helpers de role ───────────────────────────────────────────────────────
+
+    public function isAdminGlobal(): bool
+    {
+        return $this->role === 'admin_global';
+    }
+
+    public function isAdmin(): bool
+    {
+        return in_array($this->role, ['admin_global', 'admin']);
+    }
+
+    public function isOperador(): bool
+    {
+        return $this->role === 'operador';
+    }
 
     /**
-     * Get the attributes that should be cast.
-     *
-     * @return array<string, string>
+     * Escopo de tenant para queries: admin_global não filtra,
+     * os demais filtram pelo próprio tenant.
      */
-    protected function casts(): array
+    public function tenantScope(): ?int
     {
-        return [
-            'email_verified_at' => 'datetime',
-            'password' => 'hashed',
-        ];
+        return $this->isAdminGlobal() ? null : $this->tenant_id;
     }
 }

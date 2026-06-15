@@ -1,5 +1,6 @@
 <?php
 // app/Http/Controllers/Api/ProductController.php
+// Substitui o arquivo anterior integralmente
 
 namespace App\Http\Controllers\Api;
 
@@ -8,23 +9,40 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class ProductController extends Controller
 {
-    // ── Catálogo (leitura — usado pelo PDV) ──────────────────────────────────
+    // ── Catálogo PDV ─────────────────────────────────────────────────────────
 
-    /**
-     * Retorna todas as categorias ativas com seus produtos e variantes.
-     * Usado na grade visual de venda.
-     */
-    public function catalogo()
+    public function catalogo(Request $request)
     {
         try {
-            $categorias = Category::where('ativo', true)
-                ->with(['products.variants'])
-                ->orderBy('nome')
-                ->get();
+            $query = Category::where('ativo', true)
+                ->with(['products' => function ($q) use ($request) {
+                    $q->where('ativo', true)
+                        ->with(['variants' => fn($v) => $v->where('ativo', true)]);
+                    if (!$request->user()->isAdminGlobal()) {
+                        $q->where('tenant_id', $request->user()->tenant_id);
+                    }
+                }])
+                ->orderBy('nome');
+
+            if (!$request->user()->isAdminGlobal()) {
+                $query->where('tenant_id', $request->user()->tenant_id);
+            }
+
+            // Inclui info de estoque no catálogo para o PDV poder avisar
+            $categorias = $query->get()->map(function ($cat) {
+                $cat->products = $cat->products->map(function ($p) {
+                    $p->variants = $p->variants->map(fn($v) => array_merge($v->toArray(), [
+                        'sem_estoque' => $v->estaZerado(),
+                        'estoque_baixo' => $v->estaBaixoDoMinimo(),
+                    ]));
+                    return $p;
+                });
+                return $cat;
+            });
 
             return response()->json($categorias, 200);
         } catch (\Exception $e) {
@@ -32,26 +50,26 @@ class ProductController extends Controller
         }
     }
 
-    // ── Categorias ───────────────────────────────────────────────────────────
+    // ── Categorias ────────────────────────────────────────────────────────────
 
-    public function listarCategorias()
+    public function listarCategorias(Request $request)
     {
-        return response()->json(Category::orderBy('nome')->get(), 200);
+        $query = Category::orderBy('nome');
+        if (!$request->user()->isAdminGlobal()) {
+            $query->where('tenant_id', $request->user()->tenant_id);
+        }
+        return response()->json($query->get(), 200);
     }
 
     public function criarCategoria(Request $request)
     {
         try {
-            $request->validate([
-                'nome' => 'required|string|max:100',
-                'cor'  => 'nullable|string|max:7',
-            ]);
-
+            $request->validate(['nome' => 'required|string|max:100', 'cor' => 'nullable|string|max:7']);
             $categoria = Category::create([
-                'nome' => $request->nome,
-                'cor'  => $request->cor ?? '#e8720c',
+                'tenant_id' => $request->user()->tenant_id,
+                'nome'      => $request->nome,
+                'cor'       => $request->cor ?? '#48bb78',
             ]);
-
             return response()->json($categoria, 201);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
@@ -61,73 +79,95 @@ class ProductController extends Controller
     public function atualizarCategoria(Request $request, $id)
     {
         try {
-            $categoria = Category::findOrFail($id);
-            $request->validate([
-                'nome' => 'sometimes|string|max:100',
-                'cor'  => 'sometimes|string|max:7',
-                'ativo'=> 'sometimes|boolean',
-            ]);
-
-            $categoria->update($request->only(['nome', 'cor', 'ativo']));
-
-            return response()->json($categoria, 200);
+            $cat = $this->findCategoria($request, $id);
+            $cat->update($request->only(['nome', 'cor', 'ativo']));
+            return response()->json($cat, 200);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    public function deletarCategoria($id)
+    public function deletarCategoria(Request $request, $id)
     {
         try {
-            Category::findOrFail($id)->delete();
+            $this->findCategoria($request, $id)->delete();
             return response()->json(['message' => 'Categoria removida.'], 200);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    // ── Produtos ─────────────────────────────────────────────────────────────
+    // ── Produtos ──────────────────────────────────────────────────────────────
 
-    public function listarProdutos()
+    public function listarProdutos(Request $request)
     {
-        return response()->json(
-            Product::with(['category', 'variants'])->orderBy('nome')->get(),
-            200
-        );
+        $query = Product::with(['category', 'variants'])->orderBy('nome');
+        if (!$request->user()->isAdminGlobal()) {
+            $query->where('tenant_id', $request->user()->tenant_id);
+        }
+        return response()->json($query->get(), 200);
     }
 
     public function criarProduto(Request $request)
     {
         try {
             $request->validate([
-                'category_id'   => 'required|exists:categories,id',
-                'nome'          => 'required|string|max:100',
-                'preco'         => 'required|numeric|min:0.01',
-                'descricao'     => 'nullable|string',
-                'tem_variantes' => 'boolean',
-                'variantes'     => 'nullable|array',
-                'variantes.*.nome'  => 'required_with:variantes|string',
-                'variantes.*.preco' => 'required_with:variantes|numeric|min:0.01',
+                'category_id'           => 'required|exists:categories,id',
+                'nome'                  => 'required|string|max:100',
+                'preco'                 => 'required|numeric|min:0.01',
+                'descricao'             => 'nullable|string',
+                'tem_variantes'         => 'boolean',
+                // Campos de estoque para produto simples
+                'estoque'               => 'integer|min:0',
+                'estoque_minimo'        => 'integer|min:0',
+                // Variantes
+                'variantes'             => 'nullable|array',
+                'variantes.*.nome'      => 'required_with:variantes|string',
+                'variantes.*.preco'     => 'required_with:variantes|numeric|min:0.01',
+                'variantes.*.estoque'   => 'integer|min:0',
+                'variantes.*.estoque_minimo' => 'integer|min:0',
             ]);
 
-            $produto = Product::create([
-                'category_id'   => $request->category_id,
-                'nome'          => $request->nome,
-                'preco'         => $request->preco,
-                'descricao'     => $request->descricao,
-                'tem_variantes' => $request->boolean('tem_variantes', false),
-            ]);
+            /** @var Product $produto */
+            $produto = new Product();
 
-            // Cria as variantes se enviadas
-            if ($request->tem_variantes && $request->variantes) {
-                foreach ($request->variantes as $v) {
+            DB::transaction(function () use ($request, &$produto) {
+                $temVariantes = $request->boolean('tem_variantes', false);
+
+                /** @var Product $produto */
+                $produto = Product::create([
+                    'tenant_id'     => $request->user()->tenant_id,
+                    'category_id'   => $request->category_id,
+                    'nome'          => $request->nome,
+                    'preco'         => $request->preco,
+                    'descricao'     => $request->descricao,
+                    'tem_variantes' => $temVariantes,
+                ]);
+
+                if ($temVariantes && $request->variantes) {
+                    // Produto com variantes reais
+                    foreach ($request->variantes as $v) {
+                        ProductVariant::create([
+                            'product_id'     => $produto->id,
+                            'nome'           => $v['nome'],
+                            'preco'          => $v['preco'],
+                            'estoque'        => $v['estoque'] ?? 0,
+                            'estoque_minimo' => $v['estoque_minimo'] ?? 5,
+                            'is_default'     => false,
+                        ]);
+                    }
+                } else {
+                    // Produto simples: cria variante "Padrão" automaticamente
                     ProductVariant::create([
-                        'product_id' => $produto->id,
-                        'nome'       => $v['nome'],
-                        'preco'      => $v['preco'],
+                        'product_id'     => $produto->id,
+                        'nome'           => 'Padrão',
+                        'preco'          => $request->preco,
+                        'estoque'        => $request->estoque ?? 0,
+                        'estoque_minimo' => $request->estoque_minimo ?? 5,
+                        'is_default'     => true,
                     ]);
                 }
-            }
+            });
 
             return response()->json($produto->load('variants'), 201);
         } catch (\Exception $e) {
@@ -138,56 +178,57 @@ class ProductController extends Controller
     public function atualizarProduto(Request $request, $id)
     {
         try {
-            $produto = Product::findOrFail($id);
-            $request->validate([
-                'category_id'   => 'sometimes|exists:categories,id',
-                'nome'          => 'sometimes|string|max:100',
-                'preco'         => 'sometimes|numeric|min:0.01',
-                'descricao'     => 'nullable|string',
-                'tem_variantes' => 'sometimes|boolean',
-                'ativo'         => 'sometimes|boolean',
-            ]);
-
+            $produto = $this->findProduto($request, $id);
             $produto->update($request->only([
-                'category_id', 'nome', 'preco', 'descricao', 'tem_variantes', 'ativo'
+                'category_id',
+                'nome',
+                'preco',
+                'descricao',
+                'tem_variantes',
+                'ativo'
             ]));
-
             return response()->json($produto->load('variants'), 200);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    public function deletarProduto($id)
+    public function deletarProduto(Request $request, $id)
     {
         try {
-            Product::findOrFail($id)->delete();
+            $this->findProduto($request, $id)->delete();
             return response()->json(['message' => 'Produto removido.'], 200);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
 
-    // ── Variantes ────────────────────────────────────────────────────────────
+    // ── Variantes ─────────────────────────────────────────────────────────────
 
     public function criarVariante(Request $request, $productId)
     {
         try {
-            $produto = Product::findOrFail($productId);
+            $produto = $this->findProduto($request, $productId);
             $request->validate([
-                'nome'  => 'required|string',
-                'preco' => 'required|numeric|min:0.01',
+                'nome'           => 'required|string',
+                'preco'          => 'required|numeric|min:0.01',
+                'estoque'        => 'integer|min:0',
+                'estoque_minimo' => 'integer|min:0',
             ]);
+
+            // Se tinha variante padrão, remove ela ao adicionar variantes reais
+            $produto->variants()->where('is_default', true)->delete();
 
             $variante = ProductVariant::create([
-                'product_id' => $produto->id,
-                'nome'       => $request->nome,
-                'preco'      => $request->preco,
+                'product_id'     => $produto->id,
+                'nome'           => $request->nome,
+                'preco'          => $request->preco,
+                'estoque'        => $request->estoque ?? 0,
+                'estoque_minimo' => $request->estoque_minimo ?? 5,
+                'is_default'     => false,
             ]);
 
-            // Marca o produto como "tem variantes"
             $produto->update(['tem_variantes' => true]);
-
             return response()->json($variante, 201);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
@@ -202,5 +243,25 @@ class ProductController extends Controller
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
         }
+    }
+
+    // ── Privados ──────────────────────────────────────────────────────────────
+
+    private function findCategoria(Request $request, $id): Category
+    {
+        $q = Category::where('id', $id);
+        if (!$request->user()->isAdminGlobal()) {
+            $q->where('tenant_id', $request->user()->tenant_id);
+        }
+        return $q->firstOrFail();
+    }
+
+    private function findProduto(Request $request, $id): Product
+    {
+        $q = Product::where('id', $id);
+        if (!$request->user()->isAdminGlobal()) {
+            $q->where('tenant_id', $request->user()->tenant_id);
+        }
+        return $q->firstOrFail();
     }
 }
