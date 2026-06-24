@@ -11,13 +11,23 @@ class User extends Authenticatable
 {
     use HasApiTokens, Notifiable;
 
-    protected $fillable = ['tenant_id', 'name', 'email', 'password', 'role'];
+    protected $fillable = [
+        'tenant_id',
+        'name',
+        'email',
+        'password',
+        'role',
+        'ativo',
+        'primeiro_acesso', // ← adicionado
+    ];
 
     protected $hidden = ['password', 'remember_token'];
 
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password'          => 'hashed',
+        'ativo'             => 'boolean',
+        'primeiro_acesso'   => 'boolean', // ← adicionado
     ];
 
     // ── Relacionamentos ───────────────────────────────────────────────────────
@@ -49,10 +59,6 @@ class User extends Authenticatable
         return $this->role === 'operador';
     }
 
-    /**
-     * Escopo de tenant para queries: admin_global não filtra,
-     * os demais filtram pelo próprio tenant.
-     */
     public function tenantScope(): ?int
     {
         return $this->isAdminGlobal() ? null : $this->tenant_id;

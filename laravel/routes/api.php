@@ -1,17 +1,27 @@
 <?php
-// routes/api.php
+/**
+ * Venda Boa PDV
+ * 
+ * @copyright Copyright (c) 2026 Douglas Alves
+ * @license PROPRIETÁRIA - TODOS OS DIREITOS RESERVADOS.
+ * É estritamente proibido copiar, modificar ou distribuir este arquivo 
+ * sem autorização expressa por escrito do autor.
+ */
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CheckoutController;
 use App\Http\Controllers\Api\ProductController;
 use App\Http\Controllers\Api\StockController;
+use App\Http\Controllers\Api\TenantController;
+use App\Http\Controllers\Api\UserController;
 
 Route::post('/login', [AuthController::class, 'login']);
 
 Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
 
     Route::get('/user', fn(\Illuminate\Http\Request $r) => $r->user()->load('tenant'));
+    Route::post('/usuario/trocar-senha', [UserController::class, 'trocarSenha']);
 
     // Checkout — todos os usuários autenticados
     Route::post('/checkout/open',            [CheckoutController::class, 'open_checkout']);
@@ -55,5 +65,19 @@ Route::middleware(['auth:sanctum', 'tenant'])->group(function () {
         Route::post('/estoque/variantes/{id}/ajustar',  [StockController::class, 'ajustar']);
         Route::put('/estoque/variantes/{id}/minimo',   [StockController::class, 'atualizarMinimo']);
         Route::get('/estoque/variantes/{id}/historico', [StockController::class, 'historico']);
+    });
+
+    Route::middleware('role:admin')->group(function () {
+        Route::get('/usuarios',           [UserController::class, 'index']);
+        Route::post('/usuarios',           [UserController::class, 'store']);
+        Route::put('/usuarios/{id}',      [UserController::class, 'update']);
+        Route::patch('/usuarios/{id}/ativo', [UserController::class, 'toggleAtivo']);
+    });
+
+    // ── Empresas (tenants) — somente admin_global ───────────────────────────────────
+    Route::middleware('role:admin_global')->group(function () {
+        Route::get('/tenants',      [TenantController::class, 'index']);
+        Route::post('/tenants',      [TenantController::class, 'store']);
+        Route::put('/tenants/{id}', [TenantController::class, 'update']);
     });
 });
