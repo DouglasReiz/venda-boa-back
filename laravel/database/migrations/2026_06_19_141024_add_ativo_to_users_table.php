@@ -1,5 +1,4 @@
 <?php
-// database/migrations/xxxx_add_primeiro_acesso_to_users_table.php
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -9,19 +8,19 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (!Schema::hasColumn('users', 'primeiro_acesso')) {
-            Schema::table('users', function (Blueprint $table) {
-                $table->boolean('primeiro_acesso')
-                    ->default(true)
-                    ->after('ativo');
-            });
-        }
+        Schema::table('users', function (Blueprint $table) {
+            if (!Schema::hasColumn('users', 'ativo')) {
+                $table->boolean('ativo')->default(true)->after('role');
+            }
+        });
     }
 
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('primeiro_acesso');
+            if (Schema::hasColumn('users', 'ativo')) {
+                $table->dropColumn('ativo');
+            }
         });
     }
 };
