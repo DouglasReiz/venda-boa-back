@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Category extends Model
 {
-    protected $fillable = ['nome', 'cor', 'ativo'];
+    protected $fillable = ['tenant_id', 'nome', 'cor', 'ativo'];
 
     protected $casts = ['ativo' => 'boolean'];
 
