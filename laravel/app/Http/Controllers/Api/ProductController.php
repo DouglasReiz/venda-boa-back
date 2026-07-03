@@ -113,7 +113,6 @@ class ProductController extends Controller
         try {
             $request->validate([
                 'category_id'           => 'required|exists:categories,id',
-                'tenant_id'             => $request->user()->tenant_id,
                 'nome'                  => 'required|string|max:100',
                 'preco'                 => 'required|numeric|min:0.01',
                 'descricao'             => 'nullable|string',
