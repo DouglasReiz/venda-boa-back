@@ -10,6 +10,7 @@ use App\Models\Product;
 use App\Models\ProductVariant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class ProductController extends Controller
 {
@@ -114,6 +115,13 @@ class ProductController extends Controller
             $request->validate([
                 'category_id'           => 'required|exists:categories,id',
                 'nome'                  => 'required|string|max:100',
+                'codigo'                => [
+                    'nullable',
+                    'string',
+                    'max:50',
+                    Rule::unique('products', 'codigo')
+                        ->where(fn($q) => $q->where('tenant_id', $request->user()->tenant_id)),
+                ],
                 'preco'                 => 'required|numeric|min:0.01',
                 'descricao'             => 'nullable|string',
                 'tem_variantes'         => 'boolean',
@@ -139,6 +147,7 @@ class ProductController extends Controller
                     'tenant_id'     => $request->user()->tenant_id,
                     'category_id'   => $request->category_id,
                     'nome'          => $request->nome,
+                    'codigo'        => $request->codigo,
                     'preco'         => $request->preco,
                     'descricao'     => $request->descricao,
                     'tem_variantes' => $temVariantes,
@@ -182,6 +191,7 @@ class ProductController extends Controller
             $produto->update($request->only([
                 'category_id',
                 'nome',
+                'codigo',
                 'preco',
                 'descricao',
                 'tem_variantes',
